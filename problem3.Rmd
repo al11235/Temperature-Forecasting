@@ -1,0 +1,271 @@
+---
+
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(TSA)
+  library(ggplot2)
+  library(dplyr)
+  library(forecast)
+  library(tseries) #Only for the ADF test for testing stationarity
+  library(weathermetrics)
+  library(lubridate)
+})
+
+```
+
+# Time Series Data of Your Choice
+
+## Background
+
+This homework problem will allow you to apply the learned time series analysis and forecasting skills to your own or favorite dataset. This dataset could be your own data (from your interested hobby groups, sports or video game records, previous jobs, past school works, etc). Notice that, we DON'T require data disclosure so please feel free to use your own data if you would like us to help you understand the result. Or if you don't have any time series dataset, please feel free to get one from the Internet. Any topics are welcome! 
+
+Hint: If you have trouble finding a good dataset, sources of public time series data include `kaggle.com` where many of the class examples came from, and `Yahoo Finance` which provides rich information about historical prices of nearly every US stock. Or if you are a sport fun or a video game fun, I believe that similar data collections are also available online.
+
+So, please feel free to explore! I would suggest using data from sources other than `Kaggle` and `Yahoo Finance` to avoid similarity.
+
+## Importance
+
+Notice that, the questions I provided in this problem are mostly real-world tasks that we encountered in many data scientists' daily job, including those working in financial sectors (such as hedge fund companies). So while finishing the questions as required assignments, please make sure to take a few minutes to understand why these questions are raised, and what's the standard procedures to address them. 
+
+The credit will be given based on whether you do everything in standard procedures, as opposed to the results such as whether the forecasting accuracy is good.
+
+## General Requirements
+
+However, I do have some very general and mild requirements in order for the analysis to be valid.
+
+1. Please make sure the time series contains at least $T=500$ time points. The final credits will be prorated if $T$ is less than 500 (`floor` to the nearest hundred, for example, 499 will become 400, and hence $400/500=80\%$ credits will be given).
+
+2. Please make sure the data are REAL data, not simulated ones. Given there're plenty of available datasets online, I can't find a reason to simulate data. Only $50\%$ credits will be given if we find out the data are simulated.
+
+3. Also make sure the data are non-trivial (having sufficient data variation and possibly a trend). For example, it is trivial to analyze a series of 500 zeros, denoting something like "the number of spacecrafts I owned in the past 1.5 years". 0 credits will be given if the data are regarded as trivial.
+
+4. If two groups happen to use the same dataset (or one dataset being the subset of another), I reserve the right to place the two homework under scrutiny.
+
+5. Please do not use any datasets (or their subsets) used in the lectures or previous homework. Otherwise, 0 credits will be given to this problem.
+
+## Question 1 (1 credit)
+
+Please briefly describe the background of your dataset as I did for the Boston Crime Data in Homework 1 Problem 3, and its source (link) if you are using public data.
+
+```{r}
+#Enter your description here
+
+#As we are experiencing extereme weather in Minneapolis, we thought of using this dataset and predict the daily temperature.
+#The dataset used for the analysis is from the Department of Natural Resources for Minneapolis. 
+#This dataset consists of Date from 2010/01/01 to 2020/02/20, Maximum and Minimum temperature on all of these dates, the precipitation and snow on these days. We are interested to predict fluctuations in minimum temperature.
+# This dataset  
+#Link - https://www.dnr.state.mn.us/climate/historical/daily-data.html?sid=mspthr&sname=Minneapolis/St%20Paul%20Threaded%20Record&sdate=2010-01-01&edate=por
+```
+
+## Question 2 (1 credit)
+
+Please plot your data and provide the sample size. Use the first $80\%$ of the data as training, and the last $20\%$ as testing.
+
+```{r}
+#Please provide your code here
+mn_temp=read.csv("DataDowloadCSV.csv")
+
+mn_temp$Date = ymd(mn_temp$Date)
+
+# selecting minimum temperature variable with time
+mn_temp = subset(mn_temp, select = c(1, 3) )
+
+# renaming
+colnames(mn_temp) <- c("Date", "min_temp")
+
+# sample size
+dim(mn_temp)
+
+
+# converting temperature variable to kelvin
+mn_temp$min_temp <- fahrenheit.to.kelvin(mn_temp$min_temp)
+
+
+
+p1 <- ggplot(mn_temp, aes(x = Date, y = min_temp)) + geom_line(colour = 'red') + geom_point() 
+p1 
+
+
+mn_temp <- mn_temp$min_temp 
+mn_temp_2 = ts(mn_temp,frequency=365, start = c(2010,1))
+```
+
+
+```{r}
+# Train test split
+
+# As there are 3703 data points in the series, 80% (2010 to 2017) goes to train and 20% (2018 to 2020) goes to test
+
+mn_temp_train=window(mn_temp_2,start=c(2010,1),end=c(2017,365))
+mn_temp_test=window(mn_temp_2,start=c(2018,1))
+
+```
+
+## Question 3 (2 credits)
+
+On the TRAINING set:
+
+Please (make transformations if necessary, and) use the `ADF test` to check for stationarity. Remove trend if necessary, and check the residuals for spurious regression (proof of random walk)
+
+Check ACF, PACF, and EACF for the order of the ARMA model (after differencing, if it has a random walk). Use AIC or BIC to select a final model from your candidate models. Report the orders.
+
+```{r}
+#Please provide your code here
+adf.test(mn_temp_train)
+# p-value = 0.08531
+# the series is not stationary
+```
+
+
+```{r}
+# checking for Random Walk
+set.seed(1234) 
+n <- 2920
+
+Xt <- cumsum(sample(c(-1,1), n, TRUE))
+
+lm_1 <- lm(mn_temp_train ~ Xt)
+summary(lm_1)
+
+## random walk that we just simulated seems to "explain" the minneapolis temperature. This is the spurious regression.
+```
+
+
+```{r}
+## Now checking with log of temperatre
+
+lm_2 <- lm(log(mn_temp_train) ~ Xt)
+summary(lm_2)
+
+adf.test(log(mn_temp_train)) 
+# p-value = 0.07657
+## still not stationary
+
+## log is also following random walk
+```
+
+```{r}
+## So now we take first difference of our series and check
+lm_3 <- lm(diff(mn_temp_train) ~ Xt[2:2920])
+summary(lm_3)
+
+## Now the simulated random walk does not explain the minneapolis temperature.
+
+adf.test(diff(mn_temp_train)) 
+## it is stationary
+```
+
+
+```{r}
+Acf(diff(mn_temp_train), lag.max = 40) ## MA = 5
+```
+
+```{r}
+Pacf(diff(mn_temp_train), lag.max = 10) #AR 
+```
+```{r}
+eacf(diff(mn_temp_train)) #AR 1, MA 3
+```
+
+```{r}
+auto.arima(mn_temp_train) 
+# (3,0,0)(0,1,0)[365] 
+# AIC = 15320.05
+
+arima(mn_temp_train,order=c(1,1,3)) 
+# aic = 15591.35
+
+
+arima(mn_temp_train,order=c(3,1,0), seasonal=list(order=c(0,1,0),period=365))
+#aic = 15566.54
+
+arima(mn_temp_train,order=c(3,0,0), seasonal=list(order=c(0,1,0),period=365))
+#aic = 15318.05
+
+#model3=arima(mn_temp_train,order=c(3,0,0), seasonal=list(order=c(0,1,0),period=365))
+#Final Model: ARIMA(3,0,0)(0,1,0)[365] 
+```
+
+
+## Question 4 (2 credits)
+
+Fit your final model, write down the model (You may write down only the non-seasonal part, if you model contains seasonality).
+
+Report the significance of the model coefficients.
+
+Hints: 
+
+ - Check Homework 2 - Problem 3 - Question 1(b) and 1(c) for how to write a model and how to define significance.
+
+Answer:
+
+$$Y_t=  0.8450\cdot Y_{t-1} - 0.1857\cdot Y_{t-2} + 0.0834\cdot Y_{t-3}$$
+
+```{r, eval=False}
+#arima_fit
+arima_fit = arima(mn_temp_train,order=c(3,0,0), seasonal=list(order=c(0,1,0),period=365))
+arima_fit
+
+```
+
+
+
+## Question 5 (3 credits)
+
+Forecast on the testing set. Provide RMSE. 
+
+Plot the fitted value, as well as $80\%$ and $95\%$ prediction intervals, superimposed on the raw data.
+
+Explain whether your selected model fit the data well.
+
+Hint: 
+
+ - Please check the code of Lecture 7, where similar things are done for the US Consumption data, CO2 data and Bitcoin data
+
+ - If you made transformations on your training data, please use the same transformation on your testing data as well
+ 
+```{r}
+
+arima0_forecast = forecast(arima_fit,h= 783)
+
+a_forecast=arima0_forecast$mean
+
+autoplot(arima0_forecast) +
+  autolayer(mn_temp_test, series="Data") +
+  autolayer(a_forecast, series="Forecasts") +
+  labs(title="Minneapolis Temperature forecasting via ARIMA alone", y="Temperature")
+
+```
+
+
+```{r}
+rmse_arima = sqrt(mean((mn_temp_test - a_forecast)^2))
+rmse_arima
+```
+
+## Question 6 (6 credits)
+
+Please do the same forecasting task in Question 5, with XGBoost and LSTM. 
+
+Report the RMSE from each method.
+
+For each method, plot the fitted value, superimposed on the raw data (prediction intervals are not required).
+
+Comments on the performance of XGBoost and LSTM compared with ARIMA, in terms of both accuracy and computational speed. Which one is better for your data? 
+
+Hint: 
+
+1. Please feel free to use Python or other software to run XGBoost or LSTM if your code has been ready. But please paste all code as comments in the area below for reproducibility reason.
+
+2. Some of my experiences are: ARIMA has the advantages of being fast, and being able to provide prediction intervals as a statistical model. But XGBoost and LSTM may provide better forecasting accuracy.
+
+3. For LSTM, it's OK if you only have time to try a couple of layers with a few neurons.
+
+
+```{r}
+#Please provide your code, explanation and figures here, regardless of what software you use
+
+```
+
